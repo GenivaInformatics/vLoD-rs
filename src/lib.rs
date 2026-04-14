@@ -107,6 +107,9 @@ pub enum VlodError {
     
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
+
+    #[error("Thread pool error: {0}")]
+    ThreadPool(String),
 }
 
 pub type VlodResult<T> = Result<T, VlodError>;

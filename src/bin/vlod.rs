@@ -208,6 +208,9 @@ fn handle_error(error: VlodError) -> ! {
             eprintln!("Error: Invalid configuration: {}", msg);
             eprintln!("Please check your probability parameters (TP, FP, SE).");
         }
+        VlodError::ThreadPool(msg) => {
+            eprintln!("Error: Failed to build thread pool: {}", msg);
+        }
         VlodError::Htslib(ref e) => {
             eprintln!("Error: BAM/VCF processing error: {}", e);
             eprintln!("Please check that your BAM file is valid and has an index (.bai) file.");

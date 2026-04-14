@@ -1,37 +1,16 @@
 //! LOD (Limit of Detection) calculation and detectability scoring
 
 use crate::{
-    bam::process_variant_chunk, DetectabilityResult, LodConfig, Variant, VlodError, VlodResult,
+    bam::{BamAnalyzer, process_single_variant},
+    DetectabilityResult, LodConfig, Variant, VlodError, VlodResult,
 };
 use rayon::prelude::*;
+use std::cell::RefCell;
 use std::path::Path;
 
-/// Chunk variants for parallel processing
-pub fn chunkify<T: Clone>(items: Vec<T>, num_chunks: usize) -> Vec<Vec<T>> {
-    if items.is_empty() || num_chunks == 0 {
-        return vec![items];
-    }
-
-    let num_chunks = std::cmp::min(num_chunks, items.len());
-    let chunk_size = std::cmp::max(1, items.len() / num_chunks);
-    
-    let mut chunks = Vec::new();
-    let mut start = 0;
-    
-    for i in 0..num_chunks {
-        let end = if i == num_chunks - 1 {
-            items.len() // Last chunk gets all remaining items
-        } else {
-            std::cmp::min(start + chunk_size, items.len())
-        };
-        
-        if start < items.len() {
-            chunks.push(items[start..end].to_vec());
-            start = end;
-        }
-    }
-    
-    chunks
+// One BAM reader per rayon worker thread, lazily initialized on first use.
+thread_local! {
+    static ANALYZER: RefCell<Option<BamAnalyzer>> = RefCell::new(None);
 }
 
 /// Calculate detectability scores for a list of variants
@@ -45,54 +24,41 @@ pub fn calculate_detectability_scores(
         return Ok(Vec::new());
     }
 
-    let num_processes = std::cmp::min(num_processes, variants.len());
-    let chunks = chunkify(variants, num_processes);
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(num_processes)
+        .build()
+        .map_err(|e| VlodError::ThreadPool(e.to_string()))?;
 
-    // Process chunks in parallel
-    let chunk_results: Result<Vec<Vec<_>>, VlodError> = chunks
-        .into_par_iter()
-        .map(|chunk| process_variant_chunk(&chunk, bam_path, config))
-        .collect();
+    let bam_path_buf = bam_path.to_path_buf();
 
-    let chunk_results = chunk_results?;
-    
-    // Flatten results
-    let mut results: Vec<(Variant, f64, u32, u32)> = Vec::new();
-    for chunk_result in chunk_results {
-        results.extend(chunk_result);
-    }
+    // Each rayon worker opens its own BamAnalyzer on first use; rayon work-steals
+    // individual variants across workers for dynamic load balancing.
+    let raw: Result<Vec<Vec<_>>, VlodError> = pool.install(|| {
+        variants
+            .into_par_iter()
+            .map(|variant| {
+                ANALYZER.with(|cell| -> VlodResult<Vec<(Variant, f64, u32, u32)>> {
+                    let mut opt = cell.borrow_mut();
+                    if opt.is_none() {
+                        *opt = Some(BamAnalyzer::new(&bam_path_buf)?);
+                    }
+                    process_single_variant(opt.as_mut().unwrap(), &variant, config)
+                })
+            })
+            .collect()
+    });
 
-    if results.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Calculate normalization factors (currently unused but kept for potential future use)
-    let _max_coverage = results.iter().map(|(_, _, coverage, _)| *coverage).max().unwrap_or(1);
-    let _max_variant_reads = results.iter().map(|(_, _, _, reads)| *reads).max().unwrap_or(1);
-
-    // Convert to DetectabilityResult
-    let detectability_results: Vec<DetectabilityResult> = results
+    let detectability_results: Vec<DetectabilityResult> = raw?
         .into_iter()
+        .flatten()
         .map(|(variant, lod, coverage, variant_reads)| {
             let detectability_score = if lod == f64::NEG_INFINITY || coverage <= 1 {
                 0.0
             } else {
                 lod
             };
-
-            let detectability_condition = if detectability_score >= 2.50 {
-                "Detectable".to_string()
-            } else {
-                "Non-detectable".to_string()
-            };
-
-            DetectabilityResult::new(
-                variant,
-                detectability_score,
-                detectability_condition,
-                coverage,
-                variant_reads,
-            )
+            let detectability_condition = DetectabilityResult::condition_from_score(detectability_score);
+            DetectabilityResult::new(variant, detectability_score, detectability_condition, coverage, variant_reads)
         })
         .collect();
 
@@ -197,29 +163,6 @@ pub fn write_detectability_results(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_chunkify() {
-        let items = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let chunks = chunkify(items, 3);
-        
-        assert_eq!(chunks.len(), 3);
-        assert!(!chunks[0].is_empty());
-        assert!(!chunks[1].is_empty());
-        assert!(!chunks[2].is_empty());
-        
-        let total_items: usize = chunks.iter().map(|c| c.len()).sum();
-        assert_eq!(total_items, 10);
-    }
-
-    #[test]
-    fn test_chunkify_empty() {
-        let items: Vec<i32> = vec![];
-        let chunks = chunkify(items, 3);
-        
-        assert_eq!(chunks.len(), 1);
-        assert!(chunks[0].is_empty());
-    }
 
     #[test]
     fn test_calculate_lod_score() {

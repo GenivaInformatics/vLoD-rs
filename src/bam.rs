@@ -209,46 +209,33 @@ impl BamAnalyzer {
     }
 }
 
-/// Process a chunk of variants in parallel
-pub fn process_variant_chunk(
-    variants: &[Variant],
-    bam_path: &Path,
+/// Process a single variant using an existing analyzer
+pub fn process_single_variant(
+    analyzer: &mut BamAnalyzer,
+    variant: &Variant,
     config: &LodConfig,
 ) -> VlodResult<Vec<(Variant, f64, u32, u32)>> {
-    let mut analyzer = BamAnalyzer::new(bam_path)?;
+    let allele_counts = analyzer.analyze_variant(variant)?;
     let mut results = Vec::new();
 
-    for variant in variants {
-        let allele_counts = analyzer.analyze_variant(variant)?;
-        
-        // Process each alternative allele
-        let alt_alleles: Vec<&str> = variant.alt_allele.split(',').collect();
-        for alt_allele in alt_alleles {
-            let alt_count = allele_counts.get_alt_count(alt_allele);
-            let vaf = allele_counts.get_vaf(alt_allele);
-            
-            // Calculate LOD score
-            let lod_value = (config.p_tp * vaf) / ((1.0 - vaf) * config.p_se + vaf * config.p_fp);
-            let lod = if lod_value > 0.0 {
-                lod_value.log10()
-            } else {
-                f64::NEG_INFINITY
-            };
+    for alt_allele in variant.alt_allele.split(',') {
+        let alt_count = allele_counts.get_alt_count(alt_allele);
+        let vaf = allele_counts.get_vaf(alt_allele);
 
-            let variant_copy = Variant::new(
+        let lod_value = (config.p_tp * vaf) / ((1.0 - vaf) * config.p_se + vaf * config.p_fp);
+        let lod = if lod_value > 0.0 { lod_value.log10() } else { f64::NEG_INFINITY };
+
+        results.push((
+            Variant::new(
                 variant.chrom.clone(),
                 variant.pos,
                 variant.ref_allele.clone(),
                 alt_allele.to_string(),
-            );
-
-            results.push((
-                variant_copy,
-                lod,
-                allele_counts.total_count,
-                alt_count,
-            ));
-        }
+            ),
+            lod,
+            allele_counts.total_count,
+            alt_count,
+        ));
     }
 
     Ok(results)

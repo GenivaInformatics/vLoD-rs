@@ -24,23 +24,43 @@ pub struct VcfColumnIndices {
 impl VcfColumnIndices {
     pub fn from_header(header_line: &str) -> VlodResult<Self> {
         let fields: Vec<&str> = header_line.trim().split('\t').collect();
-        
-        let chrom = fields.iter().position(|&col| col == "CHROM" || col == "#CHROM")
-            .ok_or_else(|| VlodError::InvalidVariant("CHROM column not found in VCF header".to_string()))?;
-        let pos = fields.iter().position(|&col| col == "POS")
-            .ok_or_else(|| VlodError::InvalidVariant("POS column not found in VCF header".to_string()))?;
-        let id = fields.iter().position(|&col| col == "ID")
-            .ok_or_else(|| VlodError::InvalidVariant("ID column not found in VCF header".to_string()))?;
-        let ref_allele = fields.iter().position(|&col| col == "REF")
-            .ok_or_else(|| VlodError::InvalidVariant("REF column not found in VCF header".to_string()))?;
-        let alt = fields.iter().position(|&col| col == "ALT")
-            .ok_or_else(|| VlodError::InvalidVariant("ALT column not found in VCF header".to_string()))?;
-        let qual = fields.iter().position(|&col| col == "QUAL")
-            .ok_or_else(|| VlodError::InvalidVariant("QUAL column not found in VCF header".to_string()))?;
-        let filter = fields.iter().position(|&col| col == "FILTER")
-            .ok_or_else(|| VlodError::InvalidVariant("FILTER column not found in VCF header".to_string()))?;
-        let info = fields.iter().position(|&col| col == "INFO")
-            .ok_or_else(|| VlodError::InvalidVariant("INFO column not found in VCF header".to_string()))?;
+
+        let chrom = fields
+            .iter()
+            .position(|&col| col == "CHROM" || col == "#CHROM")
+            .ok_or_else(|| {
+                VlodError::InvalidVariant("CHROM column not found in VCF header".to_string())
+            })?;
+        let pos = fields.iter().position(|&col| col == "POS").ok_or_else(|| {
+            VlodError::InvalidVariant("POS column not found in VCF header".to_string())
+        })?;
+        let id = fields.iter().position(|&col| col == "ID").ok_or_else(|| {
+            VlodError::InvalidVariant("ID column not found in VCF header".to_string())
+        })?;
+        let ref_allele = fields.iter().position(|&col| col == "REF").ok_or_else(|| {
+            VlodError::InvalidVariant("REF column not found in VCF header".to_string())
+        })?;
+        let alt = fields.iter().position(|&col| col == "ALT").ok_or_else(|| {
+            VlodError::InvalidVariant("ALT column not found in VCF header".to_string())
+        })?;
+        let qual = fields
+            .iter()
+            .position(|&col| col == "QUAL")
+            .ok_or_else(|| {
+                VlodError::InvalidVariant("QUAL column not found in VCF header".to_string())
+            })?;
+        let filter = fields
+            .iter()
+            .position(|&col| col == "FILTER")
+            .ok_or_else(|| {
+                VlodError::InvalidVariant("FILTER column not found in VCF header".to_string())
+            })?;
+        let info = fields
+            .iter()
+            .position(|&col| col == "INFO")
+            .ok_or_else(|| {
+                VlodError::InvalidVariant("INFO column not found in VCF header".to_string())
+            })?;
         let format = fields.iter().position(|&col| col == "FORMAT");
         let samples_start = format.map(|f| f + 1).unwrap_or(fields.len());
 
@@ -71,7 +91,7 @@ pub struct VcfRecord {
 impl VcfRecord {
     pub fn from_line_with_indices(line: &str, indices: &VcfColumnIndices) -> VlodResult<Self> {
         let fields: Vec<&str> = line.split('\t').collect();
-        
+
         if fields.len() <= indices.info {
             return Err(VlodError::InvalidVariant(format!(
                 "Invalid VCF line format - not enough columns: {}",
@@ -80,8 +100,9 @@ impl VcfRecord {
         }
 
         let chrom = fields[indices.chrom].to_string();
-        let pos = fields[indices.pos].parse::<u32>()
-            .map_err(|_| VlodError::InvalidVariant(format!("Invalid position: {}", fields[indices.pos])))?;
+        let pos = fields[indices.pos].parse::<u32>().map_err(|_| {
+            VlodError::InvalidVariant(format!("Invalid position: {}", fields[indices.pos]))
+        })?;
         let ref_allele = fields[indices.ref_allele].to_string();
         let alt_allele = fields[indices.alt].to_string();
 
@@ -95,7 +116,10 @@ impl VcfRecord {
             }
         });
         let samples = if indices.samples_start < fields.len() {
-            fields[indices.samples_start..].iter().map(|s| s.to_string()).collect()
+            fields[indices.samples_start..]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
         } else {
             Vec::new()
         };
@@ -112,7 +136,7 @@ impl VcfRecord {
     pub fn from_line(line: &str) -> VlodResult<Self> {
         // Assume standard VCF column order for backward compatibility
         let fields: Vec<&str> = line.split('\t').collect();
-        
+
         if fields.len() < 8 {
             return Err(VlodError::InvalidVariant(format!(
                 "Invalid VCF line format: {}",
@@ -121,7 +145,8 @@ impl VcfRecord {
         }
 
         let chrom = fields[0].to_string();
-        let pos = fields[1].parse::<u32>()
+        let pos = fields[1]
+            .parse::<u32>()
             .map_err(|_| VlodError::InvalidVariant(format!("Invalid position: {}", fields[1])))?;
         let ref_allele = fields[3].to_string();
         let alt_allele = fields[4].to_string();
@@ -160,7 +185,7 @@ impl VcfRecord {
         if let Some(format) = &self.format {
             line.push('\t');
             line.push_str(format);
-            
+
             for sample in &self.samples {
                 line.push('\t');
                 line.push_str(sample);
@@ -191,7 +216,7 @@ impl VcfReader {
         Ok(VcfReader { reader })
     }
 
-    pub fn records(&mut self) -> VcfRecordIterator {
+    pub fn records(&mut self) -> VcfRecordIterator<'_> {
         VcfRecordIterator {
             reader: &mut self.reader,
         }
@@ -230,7 +255,7 @@ impl<'a> Iterator for VcfRecordIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut line = String::new();
-        
+
         loop {
             line.clear();
             match self.reader.read_line(&mut line) {
@@ -243,7 +268,7 @@ impl<'a> Iterator for VcfRecordIterator<'a> {
                     if line.is_empty() {
                         continue; // Skip empty lines
                     }
-                    
+
                     return Some(VcfRecord::from_line(line));
                 }
                 Err(e) => return Some(Err(VlodError::Io(e))),
@@ -256,7 +281,7 @@ impl<'a> Iterator for VcfRecordIterator<'a> {
 pub fn is_gzipped<P: AsRef<Path>>(path: P) -> VlodResult<bool> {
     let mut file = File::open(path)?;
     let mut buffer = [0; 2];
-    
+
     match file.read_exact(&mut buffer) {
         Ok(()) => Ok(buffer == [0x1f, 0x8b]),
         Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
@@ -340,7 +365,7 @@ mod tests {
     fn test_vcf_record_from_line() {
         let line = "chr1\t100\t.\tA\tT\t.\tPASS\tDP=30";
         let record = VcfRecord::from_line(line).unwrap();
-        
+
         assert_eq!(record.variant.chrom, "chr1");
         assert_eq!(record.variant.pos, 100);
         assert_eq!(record.variant.ref_allele, "A");
@@ -357,7 +382,7 @@ mod tests {
             format: None,
             samples: Vec::new(),
         };
-        
+
         let line = record.to_line();
         assert_eq!(line, "chr1\t100\t.\tA\tT\t.\tPASS\tDP=30");
     }
@@ -369,16 +394,16 @@ mod tests {
         writeln!(temp_file, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO").unwrap();
         writeln!(temp_file, "chr1\t100\t.\tA\tT\t.\tPASS\tDP=30").unwrap();
         writeln!(temp_file, "chr2\t200\t.\tG\tC,A\t.\tPASS\tDP=40").unwrap();
-        
+
         let variants = read_vcf_variants(temp_file.path()).unwrap();
         assert_eq!(variants.len(), 3); // One variant with single alt + one with two alts
-        
+
         assert_eq!(variants[0].chrom, "chr1");
         assert_eq!(variants[0].alt_allele, "T");
-        
+
         assert_eq!(variants[1].chrom, "chr2");
         assert_eq!(variants[1].alt_allele, "C");
-        
+
         assert_eq!(variants[2].chrom, "chr2");
         assert_eq!(variants[2].alt_allele, "A");
     }

@@ -126,6 +126,9 @@ fn handle_error(error: VlodError) -> ! {
         VlodError::InvalidConfig(msg) => {
             eprintln!("Error: Invalid configuration: {}", msg);
         }
+        VlodError::ThreadPool(msg) => {
+            eprintln!("Error: Failed to build thread pool: {}", msg);
+        }
         VlodError::Htslib(ref e) => {
             eprintln!("Error: VCF processing error: {}", e);
             eprintln!("Please check that your VCF file is valid.");

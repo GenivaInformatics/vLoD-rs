@@ -100,7 +100,12 @@ fn run() -> VlodResult<()> {
     // Validate configuration
     validate_lod_config(&config)?;
 
-    log::info!("Configuration: TP={}, FP={}, SE={}", config.p_tp, config.p_fp, config.p_se);
+    log::info!(
+        "Configuration: TP={}, FP={}, SE={}",
+        config.p_tp,
+        config.p_fp,
+        config.p_se
+    );
 
     // Create output directory if it doesn't exist
     if let Some(parent) = args.output.parent() {
@@ -121,29 +126,39 @@ fn run() -> VlodResult<()> {
 
     // Calculate detectability scores
     let _timer = Timer::new("Calculating detectability scores");
-    let results = calculate_detectability_scores(
-        variants,
-        &args.input_bam,
-        &config,
-        args.num_processes,
-    )?;
+    let results =
+        calculate_detectability_scores(variants, &args.input_bam, &config, args.num_processes)?;
 
-    log::info!("Calculated detectability scores for {} variants", results.len());
+    log::info!(
+        "Calculated detectability scores for {} variants",
+        results.len()
+    );
 
     // Log statistics
-    let detectable_count = results.iter().filter(|r| r.detectability_condition == "Detectable").count();
+    let detectable_count = results
+        .iter()
+        .filter(|r| r.detectability_condition == "Detectable")
+        .count();
     let non_detectable_count = results.len() - detectable_count;
-    
+
     log::info!("Results summary:");
-    log::info!("  Detectable: {} ({:.1}%)", detectable_count, (detectable_count as f64 / results.len() as f64) * 100.0);
-    log::info!("  Non-detectable: {} ({:.1}%)", non_detectable_count, (non_detectable_count as f64 / results.len() as f64) * 100.0);
+    log::info!(
+        "  Detectable: {} ({:.1}%)",
+        detectable_count,
+        (detectable_count as f64 / results.len() as f64) * 100.0
+    );
+    log::info!(
+        "  Non-detectable: {} ({:.1}%)",
+        non_detectable_count,
+        (non_detectable_count as f64 / results.len() as f64) * 100.0
+    );
 
     if !results.is_empty() {
         let scores: Vec<f64> = results.iter().map(|r| r.detectability_score).collect();
         let min_score = scores.iter().copied().fold(f64::INFINITY, f64::min);
         let max_score = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         let avg_score = scores.iter().sum::<f64>() / scores.len() as f64;
-        
+
         log::info!("  Score range: {:.3} to {:.3}", min_score, max_score);
         log::info!("  Average score: {:.3}", avg_score);
     }
@@ -172,6 +187,9 @@ fn handle_error(error: VlodError) -> ! {
         VlodError::InvalidConfig(msg) => {
             eprintln!("Error: Invalid configuration: {}", msg);
             eprintln!("Please check your probability parameters (TP, FP, SE).");
+        }
+        VlodError::ThreadPool(msg) => {
+            eprintln!("Error: Failed to build thread pool: {}", msg);
         }
         VlodError::Htslib(ref e) => {
             eprintln!("Error: BAM/VCF processing error: {}", e);
